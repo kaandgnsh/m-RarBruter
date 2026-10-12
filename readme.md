@@ -1,81 +1,150 @@
 # m-RarBruter
 
 <p align="center">
-  <strong>A legacy Python prototype for offline password recovery of RAR archives.</strong>
+  <strong>A bounded, local-only wordlist recovery utility for RAR archives.</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/Mode-Local%20Files-444444?style=for-the-badge" alt="Local files only">
-  <img src="https://img.shields.io/badge/Status-Legacy%20%7C%20Not%20Functional-8A5A00?style=for-the-badge" alt="Legacy prototype">
+  <img src="https://img.shields.io/badge/Scope-Local%20Files%20Only-315C45?style=for-the-badge" alt="Local files only">
+  <a href="https://github.com/kaandgnsh/m-RarBruter/actions/workflows/tests.yml">
+    <img src="https://github.com/kaandgnsh/m-RarBruter/actions/workflows/tests.yml/badge.svg?branch=main" alt="GitHub Actions">
+  </a>
 </p>
 
 ---
 
 ## Overview
 
-**m-RarBruter** is an older proof-of-concept intended to test candidate passwords from a local wordlist against a RAR archive. It was written as a small Python learning project, not as a maintained recovery application.
+**m-RarBruter** tests candidate passwords from a local wordlist against a RAR archive. This refreshed version replaces the broken legacy script with a command-line interface, explicit confirmation, and a hard limit on the number of wordlist lines inspected.
 
-> [!WARNING]
-> **The current script is not functional as published.** It contains multiple syntax and runtime errors, uses incorrect `rarfile` APIs, and does not configure the external RAR utility correctly. The repository has no automated tests. Do not rely on it to recover important files or run it without reviewing and repairing the source first.
+> **Authorized use only:** Use this tool only for archives you own or have explicit permission to recover. It works locally, does not contact remote services, and does not extract archive contents. The default mode is a dry run; candidates are not tested unless you pass `--run` and confirm.
 
-This README documents the current repository honestly; it does not claim the prototype works on modern Python environments.
+## Features
 
-## Intended Workflow
+- **Local files only:** requires paths to an archive and a wordlist on the current device.
+- **Dry run by default:** validates paths and previews the selected operation without testing passwords.
+- **Explicit confirmation:** requires `--run` and user confirmation by default.
+- **Bounded operation:** default maximum is 1,000 wordlist lines; the hard limit is 10,000 lines per run.
+- **No candidate logging:** tested candidate values are not printed as progress output.
+- **Error reporting:** stops on invalid archives, missing backends, and unexpected archive errors.
+- **Automated tests:** GitHub Actions checks the code on Python 3.10, 3.11, and 3.12.
 
-The original concept was to select a RAR archive, provide a local list of candidate passwords, and test those candidates against the archive. This approach can only test passwords present in the wordlist and may take a long time for large lists.
+## Requirements
 
-The project is intended **only for archives you own or are explicitly authorized to recover**.
+- Python 3.10 or newer
+- The `rarfile` Python package
+- A compatible RAR utility installed and available on `PATH` (the `unrar` backend is recommended by `rarfile`)
+- A local RAR archive and a UTF-8 wordlist
 
-## Requirements for a Future Refactor
+Install the Python dependency:
 
-A working version would need:
+```bash
+python -m pip install -r requirements.txt
+```
 
-- Python 3 and a supported version of the `rarfile` package.
-- A compatible external RAR extraction utility, configured according to the library's documentation.
-- Validated paths for the archive and wordlist.
-- Clear handling for corrupt archives, invalid wordlists, and unsupported archive formats.
-- Tests for success, failure, and malformed input.
+The `rarfile` package parses archive metadata in Python but uses an external utility for compressed archive testing. Consult the [rarfile documentation](https://rarfile.readthedocs.io/) for supported backends and platform-specific setup.
 
-These are requirements for a future implementation, not a claim that the current script meets them.
+## Quick Start
 
-## Inspect the Source
-
-Clone the repository to review the prototype:
+Clone the repository:
 
 ```bash
 git clone https://github.com/kaandgnsh/m-RarBruter.git
 cd m-RarBruter
-sed -n '1,240p' m-RarBruter/m-RarBruter.py
 ```
 
-Execution is not recommended until the known issues have been fixed and tested.
+First preview the intended operation. This does not test passwords:
 
-## Known Limitations
+```bash
+python m-RarBruter/m-RarBruter.py \
+  --archive "/path/to/your-archive.rar" \
+  --wordlist "/path/to/passwords.txt"
+```
 
-- The source contains invalid assignment syntax that prevents it from running.
-- Some archive operations use incorrect or undefined names.
-- Dependency installation is attempted at runtime without robust error handling.
-- Paths and file-opening logic are not validated.
-- There is no automated test suite or verified compatibility matrix.
-- The prototype has no progress controls, recovery checkpointing, or reliable error reporting.
+When the paths and attempt limit are correct, run with explicit confirmation:
 
-## Roadmap
+```bash
+python m-RarBruter/m-RarBruter.py \
+  --archive "/path/to/your-archive.rar" \
+  --wordlist "/path/to/passwords.txt" \
+  --run
+```
 
-- [ ] Replace interactive prompts with validated command-line arguments.
-- [ ] Correct dependency detection and archive-library integration.
-- [ ] Add clear error handling and progress reporting.
-- [ ] Add unit tests and a repeatable CI workflow.
-- [ ] Document compatibility and performance limits before considering a usable release.
+The command asks you to confirm authorization before testing candidates. To choose a lower limit:
+
+```bash
+python m-RarBruter/m-RarBruter.py \
+  --archive "/path/to/your-archive.rar" \
+  --wordlist "/path/to/passwords.txt" \
+  --max-attempts 500 \
+  --run
+```
+
+Only skip the prompt when you have reviewed the paths and intend to run the recovery operation:
+
+```bash
+python m-RarBruter/m-RarBruter.py \
+  --archive "/path/to/your-archive.rar" \
+  --wordlist "/path/to/passwords.txt" \
+  --max-attempts 500 \
+  --run --yes
+```
+
+## CLI Reference
+
+| Option | Description |
+|:--|:--|
+| `--archive PATH` | Local RAR archive path. Required. |
+| `--wordlist PATH` | Local UTF-8 wordlist path. Required. |
+| `--max-attempts N` | Maximum wordlist lines inspected. Default: 1,000; allowed range: 1–10,000. |
+| `--run` | Enable password testing. Without this flag, the command only previews. |
+| `--yes` | Skip confirmation; valid only with `--run`. |
+| `-h, --help` | Show help and exit. |
+
+Blank lines are skipped but still count against the line limit. The tool only tests candidates present in the selected wordlist; it does not generate passwords or guarantee recovery.
+
+## Limitations
+
+- Password recovery succeeds only if the correct password appears in the selected wordlist and within the configured line limit.
+- Performance depends on archive format, compression, backend, and device hardware.
+- Incorrect passwords are identified using the backend's `RarWrongPassword` error. Other errors stop the run rather than being silently treated as incorrect candidates.
+- The tool does not extract files, modify the archive, or save passwords to disk.
+- A RAR utility on `PATH` is required for actual archive testing. Backend behavior can vary by platform.
+
+## Tests
+
+Run the test suite from the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Tests use a fake RAR backend and temporary files; they do not perform real password cracking or require an installed RAR utility. GitHub Actions runs the tests on Python 3.10, 3.11, and 3.12.
+
+## Project Structure
+
+```text
+m-RarBruter/
+├── .github/
+│   └── workflows/
+│       └── tests.yml
+├── m-RarBruter/
+│   └── m-RarBruter.py
+├── tests/
+│   └── test_rarbruter.py
+├── requirements.txt
+└── readme.md
+```
 
 ## Responsible Use
 
-Use password-recovery tools only with files you own or have permission to access. Do not use this project to attempt access to other people's archives or data.
+Use this tool only for authorized recovery of files you own or are allowed to access. Do not use it to attempt access to another person's archives or data.
 
 ## Author
 
 **Kaan DOĞAN** · [GitHub](https://github.com/kaandgnsh) · [LinkedIn](https://www.linkedin.com/in/kaan-do%C4%9Fan-911663280/) · [Instagram](https://instagram.com/kaandgn.sh)
 
 <p align="center">
-  <sub>Legacy prototype · Review and test before use</sub>
+  <sub>Local recovery · Bounded attempts · Explicit authorization</sub>
 </p>
