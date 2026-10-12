@@ -1,141 +1,195 @@
-#!/usr/bin/python3
-# Coding By Morbius.os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Bounded, local-only wordlist password recovery for RAR archives."""
 
-AUTHOR = 'Morbius.os'
-GİTHUB = 'https://github.com/morbius-os'
-INSTAGRAM= '@morbius.os'
+from __future__ import annotations
 
-import os
-try:
-    import rarfile
-except:
-    os.system('pip install rarfile')
+import argparse
 import sys
-import time
+from pathlib import Path
+from collections.abc import Callable, Sequence
+from typing import TextIO
 
-def animasyon(yazi):
-     for u in yazi + '\n' :
-         sys.stdout.write(u)
-         sys.stdout.flush()
-         time.sleep(10. / 100)
-def hızlı_ani(yazi):
-     for u in yazi + '\n' :
-         sys.stdout.write(u)
-         sys.stdout.flush()
-         time.sleep(10. / 250)
-def max_ani(yazi):
-     for u in yazi + '\n' :
-         sys.stdout.write(u)
-         sys.stdout.flush()
-         time.sleep(1. / 55550)
-
-PURPLE = '\033[95m'
-CYAN = '\033[96m'
-DARKCYAN = '\033[36m'
-BLUE = '\033[94m'
-GREEN = '\033[92m'
-YELLOW = '\033[93m'
-RED = '\033[91m'
-BOLD = '\033[1m'
-UNDERLINE = '\033[4m'
-END = '\033[0m'#
+DEFAULT_MAX_ATTEMPTS = 1000
+MAX_ALLOWED_ATTEMPTS = 10_000
 
 
-def banner():
-    print("""
-                                                                                                        
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                                                                                    
-                                      ..........                                                    
-                                  ,,``||////||;;``,,..                                              
-                              ..``((++======{{{{((//;;,,                                            
-                            ..||++%%%%%%==++{{{{{{{{{{||``            ..........                    
-                          ..||++%%====++{{{{{{{{{{{{{{{{||,,      ,,;;//((((((//;;``                
-                          ``++%%==++{{//;;````||(({{{{{{{{;;....``{{============++{{||,,            
-                        ..((===={{((;;..        ``//{{{{{{((``||++%%&&%%============++//``          
-                        ``{{{{{{{{``              ``(({{{{((((==%%&&%%%%==============++//,,        
-                        (({{{{{{||..                ;;{{((((++%%&&%%==++((||//++========{{;;..      
-                      ..{{{{{{{{;;                  ``(((({{==&&%%====((``..,,((==========//,,      
-                      ..{{{{{{((``                  ,,//((++==%%======//``  ..//==========((``      
-                      ,,{{{{{{((``                  ,,//((++==%%======((``..,,((=========={{``      
-                      ,,(({{{{((``                  ..||((++==========++//;;//++=========={{;;      
-                      ,,(({{{{((``                  ..||((++==============++=============={{``      
-                      ..(({{{{((``    ..,,,,,,,,,,  ,,||((++==============================((``      
-                      ..(({{{{{{(({{++++++++++++++++{{{{(({{============================++||,,      
-                    ,,;;{{{{{{{{++==%%%%%%%%%%%%%%%%==++((((++==========================((;;..      
-                  ;;{{++++{{{{++==%%%%%%%%%%%%%%%%%%==++{{//((++======================++||,,        
-                ``{{====++{{{{++==%%%%%%%%%%%%%%%%%%==++++{{((++===================={{||,,          
-                ``{{==%%==++++====%%%%%%%%%%%%%%%%%%%%======++++{{++============++((;;,,            
-                ``((++========%%%%%%%%%%%%%%%%%%%%%%==========++((//++=========={{;;                
-                ``(({{{{++++++======================++++++++++{{////{{==========((``                
-                ``(({{{{{{{{{{{{++++++++++++++++++{{{{{{{{{{{{{{////{{====++====((``                
-                ``(({{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{((//{{====++++++//``                
-                ``(({{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{((//{{====++++{{;;..                
-                ``(({{{{{{{{{{{{{{{{{{{{((||||(({{{{{{{{{{{{{{{{((//{{====++++((``                  
-                ``(({{{{{{{{{{{{{{{{{{((;;``````//{{{{{{{{{{{{{{((//{{====++++{{;;..                
-                ``//{{{{{{{{{{{{{{{{{{//````````//{{{{{{{{{{{{{{((//{{====++++++((``                
-                ``//{{{{{{{{{{{{{{{{{{//;;``````//{{{{{{{{{{{{{{((//((====++++++//``                
-                ,,//{{{{{{{{{{{{{{{{{{((||````||(({{{{{{{{{{{{{{((//((====++++{{;;..                
-                ,,//{{{{{{{{{{{{{{{{{{{{//````||{{{{{{{{{{{{{{{{((//((====++++{{||..                
-                ,,//{{{{{{{{{{{{{{{{{{{{||``````(({{{{{{{{{{{{{{((//((====++++++((``                
-                ,,//{{{{{{{{{{{{{{{{{{((````````//{{{{{{{{{{{{{{((//((====++++=={{;;                
-                ,,//{{{{{{{{{{{{{{{{{{//;;``;;;;||{{{{{{{{{{{{{{{{//(({{++++++=={{;;                
-                ,,//{{{{{{{{{{{{{{{{{{((////////(({{{{{{{{{{{{{{{{((//////{{++++//,,                
-                ,,//{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{((``,,;;//||``                  
-                ..;;{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{((;;..  ......                    
-                  ..``(({{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{((//;;,,                                
-                      ..``;;////((((((((((((((((//////||;;````..                                    
-                              ....,,,,,,``````,,,,......                                            
-                                                                                                    
-                                                                                                    
-                                                                                                    
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Test a bounded number of wordlist candidates against a RAR archive "
+            "you own or are authorized to recover. Dry-run is the default."
+        )
+    )
+    parser.add_argument("--archive", required=True, help="Path to the local RAR archive.")
+    parser.add_argument("--wordlist", required=True, help="Path to a local UTF-8 wordlist.")
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=DEFAULT_MAX_ATTEMPTS,
+        metavar="N",
+        help=f"Maximum wordlist lines to inspect (1–{MAX_ALLOWED_ATTEMPTS}; default: {DEFAULT_MAX_ATTEMPTS}).",
+    )
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="Actually test candidates. Without this flag, the command only previews the plan.",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the confirmation prompt; requires --run.",
+    )
+    return parser
 
-    """)
 
-    
-banner()
+def validate_file(raw_path: str, label: str) -> Path:
+    """Resolve a path and ensure it points to a regular file."""
+    path = Path(raw_path).expanduser().resolve()
+    if not path.exists():
+        raise ValueError(f"{label} does not exist: {path}")
+    if not path.is_file():
+        raise ValueError(f"{label} is not a regular file: {path}")
+    return path
 
-hızlı_ani('Bu toolu kullanmak için bir password list yapmanız, rar dosyasını, password listenizi ve bu toolu aynı klasöre koymanız gerekir!')
-time.sleep(3)
-rarfile_nerde = input("Şifreli dosyanın adını gir bakim:")
-passwordList.txt = input("Bana bide güzel bi password listesi ver bakem")
 
-rarfile.UNRAR_TOOL = UNRAR.exe
+def scan_wordlist(
+    wordlist_path: str | Path,
+    max_attempts: int,
+    verify_password: Callable[[str], bool],
+    *,
+    progress: Callable[[int], None] | None = None,
+) -> tuple[str | None, int, int]:
+    """Test up to max_attempts wordlist lines without logging candidate values.
 
-rar_file = rar.file.RarFile(rarfile_nerde)
-passwordList.txt = open(passwordList.txt.txt)
+    Returns (password_or_none, candidates_tested, lines_scanned). Blank lines are
+    skipped, but still count against the line cap so a huge empty wordlist cannot
+    bypass the limit.
+    """
+    if not 1 <= max_attempts <= MAX_ALLOWED_ATTEMPTS:
+        raise ValueError(
+            f"max_attempts must be between 1 and {MAX_ALLOWED_ATTEMPTS}."
+        )
 
-print("""Denemeye başlayalım: 
-••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••
-""")
+    tested = 0
+    scanned = 0
+    with Path(wordlist_path).open("r", encoding="utf-8", errors="replace") as stream:
+        for raw_line in stream:
+            if scanned >= max_attempts:
+                break
+            scanned += 1
+            candidate = raw_line.rstrip("\r\n")
+            if not candidate:
+                continue
 
-parolayı_buldun_mu = False
-sayaç= 0
-işlenen_şifreler = ""
+            tested += 1
+            if verify_password(candidate):
+                return candidate, tested, scanned
+            if progress is not None and tested % 100 == 0:
+                progress(tested)
 
-for şifre in passwordList.txt:
-    sayaç = sayaç+1
-    işlenen_şifreler = şifre.strip("\n")
-    print("{} tane şifre denendi.".format(sayaç))
-    
+    return None, tested, scanned
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    input_fn: Callable[[str], str] = input,
+    output: TextIO | None = None,
+    rarfile_module: object | None = None,
+) -> int:
+    stream = sys.stdout if output is None else output
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.yes and not args.run:
+        parser.error("--yes can only be used together with --run.")
+    if not 1 <= args.max_attempts <= MAX_ALLOWED_ATTEMPTS:
+        parser.error(f"--max-attempts must be between 1 and {MAX_ALLOWED_ATTEMPTS}.")
+
     try:
-        rar_file.setpassword(işlenen_şifreler)
-        rar_file.testrar()
-        print("""•••••••••••••••••••••••••••••••••••••••••••••••••••••
-Şifreyi buldum kanki. {} denemede buldum.""".format(sayaç))
-        parolayı_buldun_mu = True
-        break
-    except:
-        continue
+        archive_path = validate_file(args.archive, "Archive")
+        wordlist_path = validate_file(args.wordlist, "Wordlist")
+        if archive_path.samefile(wordlist_path):
+            parser.error("Archive and wordlist must be two different files.")
+    except ValueError as exc:
+        parser.error(str(exc))
 
-if parolayı_buldun_mu:
-    print("Şifren bu kanki: {} ".format(işlenen_şifreler))
-    sys.exit()
-else:
-    print("""•••••••••••••••••••••••••••••••••••••••••••••••••••••
-Aga bulamadım k.b
-""")
+    print(f"Archive: {archive_path}", file=stream)
+    print(f"Wordlist: {wordlist_path}", file=stream)
+    print(f"Maximum wordlist lines: {args.max_attempts}", file=stream)
+    print("Scope: local archive and local wordlist only; no files will be extracted.", file=stream)
+
+    if not args.run:
+        print("Dry run only; no passwords were tested. Add --run to continue.", file=stream)
+        return 0
+
+    if not args.yes:
+        try:
+            answer = input_fn(
+                "Confirm that this is your archive or you have permission to recover it. "
+                "Test the displayed wordlist? [y/N] "
+            )
+        except EOFError:
+            print("No confirmation received; recovery cancelled.", file=stream)
+            return 1
+        if answer.strip().lower() not in {"y", "yes"}:
+            print("Recovery cancelled; no password candidates were tested.", file=stream)
+            return 0
+
+    module = rarfile_module
+    if module is None:
+        try:
+            import rarfile as module  # type: ignore[no-redef]
+        except ImportError:
+            print(
+                "Missing dependency. Install it with: python -m pip install -r requirements.txt",
+                file=stream,
+            )
+            return 2
+
+    try:
+        with module.RarFile(str(archive_path)) as archive:
+            if not archive.needs_password():
+                print(
+                    "The archive does not appear to contain password-protected entries; "
+                    "no candidates were tested.",
+                    file=stream,
+                )
+                return 2
+
+            def verify(candidate: str) -> bool:
+                try:
+                    archive.testrar(pwd=candidate)
+                    return True
+                except module.RarWrongPassword:
+                    return False
+
+            def report_progress(tested: int) -> None:
+                print(f"Candidates tested: {tested}", file=stream)
+
+            password, tested, scanned = scan_wordlist(
+                wordlist_path,
+                args.max_attempts,
+                verify,
+                progress=report_progress,
+            )
+    except (OSError, module.Error) as exc:
+        print(
+            f"Could not test the archive: {exc}. Check the archive, rarfile setup, "
+            "and compatible RAR utility available on PATH.",
+            file=stream,
+        )
+        return 2
+
+    print(f"Candidates tested: {tested}; wordlist lines scanned: {scanned}.", file=stream)
+    if password is not None:
+        print(f"Password found: {password!r}", file=stream)
+        return 0
+
+    print("No matching password was found within the selected wordlist limit.", file=stream)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
